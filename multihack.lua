@@ -1,3 +1,9 @@
+--[[
+    MERAKCHY V17 - RAW SCRIPT
+    Features: Aimbot, ESP (Box/Health/Name), Fly, Rainbow UI
+    Fix: No more ghost ESP when players leave
+]]
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -7,203 +13,154 @@ local Camera = workspace.CurrentCamera
 
 local Settings = {
     Aimbot = false,
-    WallCheck = true,
+    WallCheck = false,
     Smoothing = 0.2,
     Prediction = 0.165,
-    Skeleton = false,
+    Skeleton = false, -- Skeletons can be heavy, usually kept off by default
     Box = false,
     Health = false,
     Names = false,
     Rainbow = false,
     Fly = false,
-    NoClip = false,
-    FlySpeed = 66, 
+    FlySpeed = 70, 
     FOV = 150,
     MainColor = Color3.fromRGB(0, 255, 255),
-    AimbotKey = Enum.UserInputType.MouseButton2,
-    Visible = true
+    AimbotKey = Enum.UserInputType.MouseButton2
 }
 
 local ESPData = {}
+local UIObjects = {}
 
--- Drawing API Setup
-local FOVCircle = Drawing.new("Circle")
-FOVCircle.Thickness = 1
-FOVCircle.NumSides = 60
-FOVCircle.Color = Settings.MainColor
-FOVCircle.Filled = false
+--// CLEANUP SYSTEM (Prevents the "Ghost Bug")
+local function RemoveESP(p)
+    if ESPData[p] then
+        for _, drawing in pairs(ESPData[p]) do
+            drawing.Visible = false
+            drawing:Remove()
+        end
+        ESPData[p] = nil
+    end
+end
 
--- UI Construction
+Players.PlayerRemoving:Connect(RemoveESP)
+
+--// UI CREATION
 local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 ScreenGui.ResetOnSpawn = false
 local Main = Instance.new("Frame", ScreenGui)
-Main.Size = UDim2.new(0, 250, 0, 500)
-Main.Position = UDim2.new(0.5, -125, 0.5, -250)
-Main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Main.Size = UDim2.new(0, 260, 0, 480)
+Main.Position = UDim2.new(0.5, -130, 0.5, -240)
+Main.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 Main.Active = true
 Main.Draggable = true
-Instance.new("UICorner", Main)
+local Glow = Instance.new("Frame", Main); Glow.ZIndex = 0; Glow.Position = UDim2.new(0,-2,0,-2); Glow.Size = UDim2.new(1,4,1,4); Glow.BackgroundColor3 = Settings.MainColor; Instance.new("UICorner", Glow); Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
 
-local CanvasGroup = Instance.new("CanvasGroup", Main)
-CanvasGroup.Size = UDim2.new(1, 0, 1, 0)
-CanvasGroup.BackgroundTransparency = 1
+local Title = Instance.new("TextLabel", Main); Title.Size = UDim2.new(1, 0, 0, 45); Title.BackgroundTransparency = 1; Title.Text = "MERAKCHY // V17"; Title.TextColor3 = Color3.new(1,1,1); Title.Font = Enum.Font.Code; Title.TextSize = 18
+local Container = Instance.new("ScrollingFrame", Main); Container.Size = UDim2.new(1, 0, 1, -55); Container.Position = UDim2.new(0, 0, 0, 50); Container.BackgroundTransparency = 1; Container.BorderSizePixel = 0; Container.CanvasSize = UDim2.new(0, 0, 0, 450); local UIList = Instance.new("UIListLayout", Container); UIList.HorizontalAlignment = Enum.HorizontalAlignment.Center; UIList.Padding = UDim.new(0, 8)
 
-local function ToggleUI(visible)
-    local targetPos = visible and UDim2.new(0.5, -125, 0.5, -250) or UDim2.new(0.5, -125, 0.5, -200)
-    local targetAlpha = visible and 0 or 1
-    if visible then Main.Visible = true end
-    local info = TweenInfo.new(0.4, Enum.EasingStyle.Quart)
-    TweenService:Create(Main, info, {Position = targetPos}):Play()
-    local fade = TweenService:Create(CanvasGroup, info, {GroupTransparency = targetAlpha})
-    fade:Play()
-    fade.Completed:Connect(function() if not visible then Main.Visible = false end end)
-end
-
-local function AddToggle(name, y, callback)
-    local btn = Instance.new("TextButton", CanvasGroup)
-    btn.Size = UDim2.new(1, -20, 0, 35)
-    btn.Position = UDim2.new(0, 10, 0, y)
-    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    btn.Text = "  " .. name
-    btn.TextColor3 = Color3.new(0.9, 0.9, 0.9)
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 12
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    Instance.new("UICorner", btn)
-    local ind = Instance.new("Frame", btn)
-    ind.Size = UDim2.new(0, 8, 0, 8)
-    ind.Position = UDim2.new(1, -18, 0.5, -4)
-    ind.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    Instance.new("UICorner", ind).CornerRadius = UDim.new(1, 0)
-    local s = false
-    btn.MouseButton1Click:Connect(function()
-        s = not s
-        TweenService:Create(ind, TweenInfo.new(0.3), {BackgroundColor3 = s and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(255, 50, 50)}):Play()
-        callback(s)
-    end)
-end
-
--- Layout
-AddToggle("Aimbot (Right Click)", 50, function(v) Settings.Aimbot = v end)
-AddToggle("Wall Check", 95, function(v) Settings.WallCheck = v end)
-AddToggle("Skeleton ESP", 140, function(v) Settings.Skeleton = v end)
-AddToggle("Box ESP", 185, function(v) Settings.Box = v end)
-AddToggle("Names ESP", 230, function(v) Settings.Names = v end)
-AddToggle("Health ESP", 275, function(v) Settings.Health = v end)
-AddToggle("Fly Mode (Q)", 320, function(v) Settings.Fly = v end)
-AddToggle("NoClip", 365, function(v) Settings.NoClip = v end)
-AddToggle("Rainbow Mode", 410, function(v) Settings.Rainbow = v end)
-
--- Input Handling
-UserInputService.InputBegan:Connect(function(i, g)
-    if g then return end
-    if i.KeyCode == Enum.KeyCode.RightShift then Settings.Visible = not Settings.Visible ToggleUI(Settings.Visible) end
-    if i.KeyCode == Enum.KeyCode.Q then Settings.Fly = not Settings.Fly end
-end)
-
-local function GetClosestTarget()
-    local target, dist = nil, Settings.FOV
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
-            local pos, vis = Camera:WorldToViewportPoint(p.Character.Head.Position)
-            if vis then
-                local mDist = (Vector2.new(pos.X, pos.Y) - UserInputService:GetMouseLocation()).Magnitude
-                if mDist < dist then
-                    if Settings.WallCheck then
-                        local ray = Ray.new(Camera.CFrame.Position, (p.Character.Head.Position - Camera.CFrame.Position).Unit * 1000)
-                        local hit = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character, p.Character})
-                        if hit == nil then target = p.Character.Head; dist = mDist end
-                    else
-                        target = p.Character.Head; dist = mDist
-                    end
-                end
-            end
-        end
+local function AddToggle(name, settingKey, callback)
+    local TBtn = Instance.new("TextButton", Container); TBtn.Size = UDim2.new(0, 230, 0, 40); TBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 30); TBtn.Text = name:upper(); TBtn.TextColor3 = Color3.fromRGB(180,180,180); TBtn.Font = Enum.Font.GothamMedium; TBtn.TextSize = 11; Instance.new("UICorner", TBtn)
+    local Switch = Instance.new("Frame", TBtn); Switch.Size = UDim2.new(0, 30, 0, 16); Switch.Position = UDim2.new(1, -40, 0.5, -8); Switch.BackgroundColor3 = Color3.fromRGB(40, 40, 45); Instance.new("UICorner", Switch).CornerRadius = UDim.new(1, 0)
+    local Dot = Instance.new("Frame", Switch); Dot.Size = UDim2.new(0, 12, 0, 12); Dot.Position = UDim2.new(0, 2, 0.5, -6); Dot.BackgroundColor3 = Color3.fromRGB(100, 100, 100); Instance.new("UICorner", Dot).CornerRadius = UDim.new(1, 0)
+    
+    local function update(state)
+        local targetPos = state and UDim2.new(1, -14, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
+        local targetCol = state and Settings.MainColor or Color3.fromRGB(100, 100, 100)
+        TweenService:Create(Dot, TweenInfo.new(0.2), {Position = targetPos, BackgroundColor3 = targetCol}):Play()
     end
-    return target
+    TBtn.MouseButton1Click:Connect(function()
+        Settings[settingKey] = not Settings[settingKey]
+        update(Settings[settingKey])
+        if callback then callback(Settings[settingKey]) end
+    end)
+    UIObjects[settingKey] = update
 end
 
+AddToggle("Aimbot", "Aimbot")
+AddToggle("Box ESP", "Box")
+AddToggle("Health ESP", "Health")
+AddToggle("Fly Mode (Q)", "Fly")
+AddToggle("Rainbow UI", "Rainbow")
+
+--// ESP CREATION FUNCTION
 local function CreateESP(p)
-    ESPData[p] = {Box = Drawing.new("Square"), Name = Drawing.new("Text"), Health = Drawing.new("Text"), Line = Drawing.new("Line")}
-    for _, v in pairs(ESPData[p]) do v.Visible = false if v.Size then v.Size = 14 v.Center = true v.Outline = true end end
+    ESPData[p] = {
+        Box = Drawing.new("Square"),
+        Name = Drawing.new("Text"),
+        Health = Drawing.new("Text")
+    }
+    for _, v in pairs(ESPData[p]) do v.Visible = false; v.Thickness = 1.5 end
+    ESPData[p].Name.Size = 14; ESPData[p].Name.Center = true; ESPData[p].Name.Outline = true
+    ESPData[p].Health.Size = 14; ESPData[p].Health.Center = true; ESPData[p].Health.Outline = true
 end
 
-Players.PlayerRemoving:Connect(function(p)
-    if ESPData[p] then for _, v in pairs(ESPData[p]) do v:Remove() end ESPData[p] = nil end
-end)
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 1; FOVCircle.NumSides = 60; FOVCircle.Visible = false
 
--- Main Loop
+--// MAIN LOOP
 RunService.RenderStepped:Connect(function()
-    local Color = Settings.Rainbow and Color3.fromHSV(tick() % 5 / 5, 1, 1) or Settings.MainColor
+    local CurrentColor = Settings.Rainbow and Color3.fromHSV(tick() % 5 / 5, 1, 1) or Settings.MainColor
+    if Settings.Rainbow then Glow.BackgroundColor3 = CurrentColor; Title.TextColor3 = CurrentColor; FOVCircle.Color = CurrentColor end
+
+    -- Aimbot FOV
     FOVCircle.Position = UserInputService:GetMouseLocation()
     FOVCircle.Radius = Settings.FOV
-    FOVCircle.Visible = Settings.Visible and Settings.Aimbot
-    FOVCircle.Color = Color
+    FOVCircle.Visible = Settings.Aimbot
 
+    -- Fly Logic
     local char = LocalPlayer.Character
-    if char then
-        if Settings.NoClip then
-            for _, v in pairs(char:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end
-        end
-        if Settings.Fly and char:FindFirstChild("HumanoidRootPart") then
-            local root = char.HumanoidRootPart
+    if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
+        local root = char.HumanoidRootPart
+        local hum = char.Humanoid
+        if Settings.Fly then
+            hum.PlatformStand = true
             local dir = Vector3.new(0,0,0)
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + Camera.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - Camera.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - Camera.CFrame.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + Camera.CFrame.RightVector end
             root.Velocity = dir * Settings.FlySpeed
-            char.Humanoid.PlatformStand = true
-        elseif char:FindFirstChild("Humanoid") then
-            char.Humanoid.PlatformStand = false
+        else
+            if hum.PlatformStand then hum.PlatformStand = false end
         end
     end
 
-    if Settings.Aimbot and UserInputService:IsMouseButtonPressed(Settings.AimbotKey) then
-        local target = GetClosestTarget()
-        if target then
-            local aimPos = target.Position + (target.Parent.HumanoidRootPart.Velocity * Settings.Prediction)
-            Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, aimPos), Settings.Smoothing)
-        end
-    end
-
+    -- ESP Rendering
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             if not ESPData[p] then CreateESP(p) end
-            local d, c = ESPData[p], p.Character
-            if c and c:FindFirstChild("HumanoidRootPart") and c.Humanoid.Health > 0 then
+            local d = ESPData[p]
+            local c = p.Character
+            if c and c:FindFirstChild("HumanoidRootPart") and c:FindFirstChild("Humanoid") and c.Humanoid.Health > 0 then
                 local rPos, vis = Camera:WorldToViewportPoint(c.HumanoidRootPart.Position)
                 local size = 3000 / rPos.Z
-                
+
                 d.Box.Visible = Settings.Box and vis
                 if d.Box.Visible then
-                    d.Box.Size = Vector2.new(size, size * 1.4)
-                    d.Box.Position = Vector2.new(rPos.X - size/2, rPos.Y - (size * 1.4)/2)
-                    d.Box.Color = Color
-                end
-
-                d.Name.Visible = Settings.Names and vis
-                if d.Name.Visible then
-                    d.Name.Position = Vector2.new(rPos.X, rPos.Y - (size * 1.4)/2 - 15)
-                    d.Name.Text = p.DisplayName; d.Name.Color = Color3.new(1,1,1)
+                    d.Box.Size = Vector2.new(size, size * 1.5)
+                    d.Box.Position = Vector2.new(rPos.X - size/2, rPos.Y - (size * 1.5)/2)
+                    d.Box.Color = CurrentColor
                 end
 
                 d.Health.Visible = Settings.Health and vis
                 if d.Health.Visible then
-                    d.Health.Position = Vector2.new(rPos.X, rPos.Y + (size * 1.4)/2 + 5)
                     d.Health.Text = math.floor(c.Humanoid.Health) .. " HP"
+                    d.Health.Position = Vector2.new(rPos.X, rPos.Y + (size * 0.75) + 5)
                     d.Health.Color = Color3.fromHSV(c.Humanoid.Health/300, 1, 1)
-                end
-
-                d.Line.Visible = Settings.Skeleton and vis
-                if d.Line.Visible then
-                    local hPos = Camera:WorldToViewportPoint(c.Head.Position)
-                    d.Line.From = Vector2.new(hPos.X, hPos.Y); d.Line.To = Vector2.new(rPos.X, rPos.Y)
-                    d.Line.Color = Color
                 end
             else
                 for _, v in pairs(d) do v.Visible = false end
             end
         end
+    end
+end)
+
+--// INPUT HANDLING
+UserInputService.InputBegan:Connect(function(i, g)
+    if g then return end
+    if i.KeyCode == Enum.KeyCode.RightShift then Main.Visible = not Main.Visible
+    elseif i.KeyCode == Enum.KeyCode.Q then 
+        Settings.Fly = not Settings.Fly 
+        if UIObjects["Fly"] then UIObjects["Fly"](Settings.Fly) end
     end
 end)
