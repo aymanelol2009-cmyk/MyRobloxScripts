@@ -1,7 +1,7 @@
 --[[
-    MERAKCHY V17 - RAW SCRIPT
-    Features: Aimbot, ESP (Box/Health/Name), Fly, Rainbow UI
-    Fix: No more ghost ESP when players leave
+    WAR AIM - V19.8 (SPEED TOGGLE UPDATE)
+    Developed by: Aym the Developer
+    Controls: [Right Shift] Menu | [Q] Fly | [N] NoClip
 ]]
 
 local Players = game:GetService("Players")
@@ -12,155 +12,207 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 local Settings = {
-    Aimbot = false,
-    WallCheck = false,
-    Smoothing = 0.2,
-    Prediction = 0.165,
-    Skeleton = false, -- Skeletons can be heavy, usually kept off by default
-    Box = false,
-    Health = false,
-    Names = false,
-    Rainbow = false,
-    Fly = false,
-    FlySpeed = 70, 
-    FOV = 150,
-    MainColor = Color3.fromRGB(0, 255, 255),
-    AimbotKey = Enum.UserInputType.MouseButton2
+    Aimbot = false, FOV = 150,
+    Box = false, Health = false, Tracers = false, Skeleton = false,
+    Fly = false, NoClip = false, FlySpeed = 75,
+    EnableSpeed = false, SpeedHack = 16,
+    MainColor = Color3.fromRGB(255, 0, 0)
 }
 
 local ESPData = {}
-local UIObjects = {}
+local TogglesUI = {}
+local IsMenuOpen = true
 
---// CLEANUP SYSTEM (Prevents the "Ghost Bug")
-local function RemoveESP(p)
-    if ESPData[p] then
-        for _, drawing in pairs(ESPData[p]) do
-            drawing.Visible = false
-            drawing:Remove()
-        end
-        ESPData[p] = nil
-    end
-end
+--// FOV DRAWING OBJECT
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 1.5
+FOVCircle.NumSides = 60
+FOVCircle.Radius = Settings.FOV
+FOVCircle.Filled = false
+FOVCircle.Visible = false
+FOVCircle.Color = Settings.MainColor
 
-Players.PlayerRemoving:Connect(RemoveESP)
-
---// UI CREATION
-local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
-ScreenGui.ResetOnSpawn = false
-local Main = Instance.new("Frame", ScreenGui)
-Main.Size = UDim2.new(0, 260, 0, 480)
-Main.Position = UDim2.new(0.5, -130, 0.5, -240)
-Main.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-Main.Active = true
-Main.Draggable = true
-local Glow = Instance.new("Frame", Main); Glow.ZIndex = 0; Glow.Position = UDim2.new(0,-2,0,-2); Glow.Size = UDim2.new(1,4,1,4); Glow.BackgroundColor3 = Settings.MainColor; Instance.new("UICorner", Glow); Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
-
-local Title = Instance.new("TextLabel", Main); Title.Size = UDim2.new(1, 0, 0, 45); Title.BackgroundTransparency = 1; Title.Text = "MERAKCHY // V17"; Title.TextColor3 = Color3.new(1,1,1); Title.Font = Enum.Font.Code; Title.TextSize = 18
-local Container = Instance.new("ScrollingFrame", Main); Container.Size = UDim2.new(1, 0, 1, -55); Container.Position = UDim2.new(0, 0, 0, 50); Container.BackgroundTransparency = 1; Container.BorderSizePixel = 0; Container.CanvasSize = UDim2.new(0, 0, 0, 450); local UIList = Instance.new("UIListLayout", Container); UIList.HorizontalAlignment = Enum.HorizontalAlignment.Center; UIList.Padding = UDim.new(0, 8)
-
-local function AddToggle(name, settingKey, callback)
-    local TBtn = Instance.new("TextButton", Container); TBtn.Size = UDim2.new(0, 230, 0, 40); TBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 30); TBtn.Text = name:upper(); TBtn.TextColor3 = Color3.fromRGB(180,180,180); TBtn.Font = Enum.Font.GothamMedium; TBtn.TextSize = 11; Instance.new("UICorner", TBtn)
-    local Switch = Instance.new("Frame", TBtn); Switch.Size = UDim2.new(0, 30, 0, 16); Switch.Position = UDim2.new(1, -40, 0.5, -8); Switch.BackgroundColor3 = Color3.fromRGB(40, 40, 45); Instance.new("UICorner", Switch).CornerRadius = UDim.new(1, 0)
-    local Dot = Instance.new("Frame", Switch); Dot.Size = UDim2.new(0, 12, 0, 12); Dot.Position = UDim2.new(0, 2, 0.5, -6); Dot.BackgroundColor3 = Color3.fromRGB(100, 100, 100); Instance.new("UICorner", Dot).CornerRadius = UDim.new(1, 0)
-    
-    local function update(state)
-        local targetPos = state and UDim2.new(1, -14, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
-        local targetCol = state and Settings.MainColor or Color3.fromRGB(100, 100, 100)
-        TweenService:Create(Dot, TweenInfo.new(0.2), {Position = targetPos, BackgroundColor3 = targetCol}):Play()
-    end
-    TBtn.MouseButton1Click:Connect(function()
-        Settings[settingKey] = not Settings[settingKey]
-        update(Settings[settingKey])
-        if callback then callback(Settings[settingKey]) end
-    end)
-    UIObjects[settingKey] = update
-end
-
-AddToggle("Aimbot", "Aimbot")
-AddToggle("Box ESP", "Box")
-AddToggle("Health ESP", "Health")
-AddToggle("Fly Mode (Q)", "Fly")
-AddToggle("Rainbow UI", "Rainbow")
-
---// ESP CREATION FUNCTION
+--// ESP ENGINE
 local function CreateESP(p)
+    if ESPData[p] then return end
     ESPData[p] = {
         Box = Drawing.new("Square"),
-        Name = Drawing.new("Text"),
-        Health = Drawing.new("Text")
+        Health = Drawing.new("Text"),
+        Tracer = Drawing.new("Line"),
+        Skeleton = {
+            Spine = Drawing.new("Line"),
+            LeftArm = Drawing.new("Line"),
+            RightArm = Drawing.new("Line"),
+            LeftLeg = Drawing.new("Line"),
+            RightLeg = Drawing.new("Line")
+        }
     }
-    for _, v in pairs(ESPData[p]) do v.Visible = false; v.Thickness = 1.5 end
-    ESPData[p].Name.Size = 14; ESPData[p].Name.Center = true; ESPData[p].Name.Outline = true
-    ESPData[p].Health.Size = 14; ESPData[p].Health.Center = true; ESPData[p].Health.Outline = true
+    local d = ESPData[p]
+    d.Box.Thickness = 1.5; d.Health.Size = 14; d.Health.Center = true; d.Health.Outline = true; d.Tracer.Thickness = 1
+    for _, line in pairs(d.Skeleton) do line.Thickness = 1.5; line.Visible = false end
 end
 
-local FOVCircle = Drawing.new("Circle")
-FOVCircle.Thickness = 1; FOVCircle.NumSides = 60; FOVCircle.Visible = false
+--// UI SETUP
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer.PlayerGui); ScreenGui.ResetOnSpawn = false
+local Main = Instance.new("Frame", ScreenGui); Main.Size = UDim2.new(0, 420, 0, 320); Main.Position = UDim2.new(0.5, -210, 0.5, -160); Main.BackgroundColor3 = Color3.fromRGB(15, 15, 18); Main.BackgroundTransparency = 0.15; Main.Active = true; Main.Draggable = true; Main.ClipsDescendants = false; Instance.new("UICorner", Main)
+local Glow = Instance.new("Frame", Main); Glow.ZIndex = 0; Glow.Position = UDim2.new(0,-1,0,-1); Glow.Size = UDim2.new(1,2,1,2); Glow.BackgroundColor3 = Settings.MainColor; Instance.new("UICorner", Glow)
+local Sidebar = Instance.new("Frame", Main); Sidebar.Size = UDim2.new(0, 110, 1, 0); Sidebar.BackgroundColor3 = Color3.fromRGB(10, 10, 12); Sidebar.BackgroundTransparency = 0.2; Instance.new("UICorner", Sidebar)
+local Title = Instance.new("TextLabel", Sidebar); Title.Size = UDim2.new(1, 0, 0, 50); Title.Text = "WAR AIM"; Title.TextColor3 = Settings.MainColor; Title.Font = Enum.Font.GothamBold; Title.BackgroundTransparency = 1; Title.TextSize = 16
 
---// MAIN LOOP
+local NavHolder = Instance.new("Frame", Sidebar); NavHolder.Size = UDim2.new(1, 0, 0, 150); NavHolder.Position = UDim2.new(0, 0, 0, 50); NavHolder.BackgroundTransparency = 1
+local NavList = Instance.new("UIListLayout", NavHolder); NavList.HorizontalAlignment = Enum.HorizontalAlignment.Center; NavList.Padding = UDim.new(0, 5)
+
+-- PROFILE
+local ProfileFrame = Instance.new("Frame", Sidebar); ProfileFrame.Size = UDim2.new(1, 0, 0, 100); ProfileFrame.Position = UDim2.new(0, 0, 1, -105); ProfileFrame.BackgroundTransparency = 1
+local pImg = Instance.new("ImageLabel", ProfileFrame); pImg.Size = UDim2.new(0, 40, 0, 40); pImg.Position = UDim2.new(0.5, -20, 0, 5); pImg.Image = "rbxthumb://type=AvatarHeadShot&id="..LocalPlayer.UserId.."&w=150&h=150"; Instance.new("UICorner", pImg).CornerRadius = UDim.new(1, 0)
+local pName = Instance.new("TextLabel", ProfileFrame); pName.Size = UDim2.new(1, 0, 0, 15); pName.Position = UDim2.new(0, 0, 0, 50); pName.Text = LocalPlayer.DisplayName; pName.TextColor3 = Color3.new(1,1,1); pName.Font = Enum.Font.GothamBold; pName.TextSize = 9; pName.BackgroundTransparency = 1
+
+local Pages = Instance.new("Frame", Main); Pages.Position = UDim2.new(0, 120, 0, 10); Pages.Size = UDim2.new(1, -130, 1, -20); Pages.BackgroundTransparency = 1
+
+local function CreatePage(name)
+    local Page = Instance.new("ScrollingFrame", Pages); Page.Size = UDim2.new(1, 0, 1, 0); Page.Visible = false; Page.BackgroundTransparency = 1; Page.ScrollBarThickness = 2; Page.Name = name; Page.ScrollBarImageColor3 = Settings.MainColor
+    local List = Instance.new("UIListLayout", Page); List.Padding = UDim.new(0, 8)
+    List:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() Page.CanvasSize = UDim2.new(0, 0, 0, List.AbsoluteContentSize.Y + 10) end)
+    return Page
+end
+
+local CombatPage = CreatePage("Combat"); CombatPage.Visible = true
+local VisualPage = CreatePage("Visuals"); local InfoPage = CreatePage("Info")
+
+local function AddTab(name, page)
+    local Btn = Instance.new("TextButton", NavHolder); Btn.Size = UDim2.new(0, 90, 0, 35); Btn.BackgroundTransparency = 0.9; Btn.BackgroundColor3 = Color3.new(1,1,1); Btn.Text = name; Btn.TextColor3 = Color3.new(0.8,0.8,0.8); Btn.Font = Enum.Font.Gotham; Btn.TextSize = 10; Instance.new("UICorner", Btn)
+    Btn.MouseButton1Click:Connect(function() for _, p in pairs(Pages:GetChildren()) do p.Visible = false end; page.Visible = true end)
+end
+AddTab("COMBAT", CombatPage); AddTab("VISUALS", VisualPage); AddTab("CREDITS", InfoPage)
+
+local function LoadIY()
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
+end
+
+local function AddCreditBox(p, t, d, isButton)
+    local F = Instance.new("Frame", p); F.Size = UDim2.new(1, -5, 0, 60); F.BackgroundColor3 = Color3.fromRGB(25, 25, 30); Instance.new("UICorner", F)
+    local T = Instance.new("TextLabel", F); T.Size = UDim2.new(1, 0, 0, 25); T.Position = UDim2.new(0, 10, 0, 5); T.BackgroundTransparency = 1; T.Text = t; T.TextColor3 = Settings.MainColor; T.Font = Enum.Font.GothamBold; T.TextSize = 12; T.TextXAlignment = Enum.TextXAlignment.Left
+    local D = Instance.new("TextLabel", F); D.Size = UDim2.new(1, -20, 0, 25); D.Position = UDim2.new(0, 10, 0, 25); D.BackgroundTransparency = 1; D.Text = d; D.TextColor3 = Color3.new(0.8,0.8,0.8); D.Font = Enum.Font.Gotham; D.TextSize = 10; D.TextXAlignment = Enum.TextXAlignment.Left; D.TextWrapped = true
+    if isButton then
+        local B = Instance.new("TextButton", F); B.Size = UDim2.new(0, 80, 0, 20); B.Position = UDim2.new(1, -90, 0.5, -10); B.BackgroundColor3 = Settings.MainColor; B.Text = "RUN"; B.TextColor3 = Color3.new(1,1,1); B.Font = Enum.Font.GothamBold; B.TextSize = 10; Instance.new("UICorner", B)
+        B.MouseButton1Click:Connect(LoadIY)
+    end
+end
+
+AddCreditBox(InfoPage, "Lead Developer", "Developed by Aym the Developer")
+AddCreditBox(InfoPage, "Infinite Yield", "Run the universal admin command bar.", true)
+AddCreditBox(InfoPage, "Status", "V19.8 - Speed Hack Toggle Enabled")
+
+local function UpdateToggleUI(key) if TogglesUI[key] then TweenService:Create(TogglesUI[key], TweenInfo.new(0.2), {BackgroundColor3 = Settings[key] and Settings.MainColor or Color3.new(0.2, 0.2, 0.2)}):Play() end end
+local function AddToggle(parent, text, key)
+    local B = Instance.new("TextButton", parent); B.Size = UDim2.new(1, -5, 0, 38); B.BackgroundColor3 = Color3.fromRGB(25, 25, 30); B.Text = "  "..text; B.TextColor3 = Color3.new(1,1,1); B.TextXAlignment = Enum.TextXAlignment.Left; B.Font = Enum.Font.Gotham; B.TextSize = 11; Instance.new("UICorner", B)
+    local Ind = Instance.new("Frame", B); Ind.Size = UDim2.new(0, 10, 0, 10); Ind.Position = UDim2.new(1, -25, 0.5, -5); Ind.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2); Instance.new("UICorner", Ind); TogglesUI[key] = Ind
+    B.MouseButton1Click:Connect(function() Settings[key] = not Settings[key]; UpdateToggleUI(key) end)
+end
+local function AddSlider(parent, text, min, max, key)
+    local SFrame = Instance.new("Frame", parent); SFrame.Size = UDim2.new(1, -5, 0, 55); SFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30); Instance.new("UICorner", SFrame)
+    local Label = Instance.new("TextLabel", SFrame); Label.Size = UDim2.new(1, 0, 0, 30); Label.BackgroundTransparency = 1; Label.Text = "  "..text..": "..Settings[key]; Label.TextColor3 = Color3.new(1,1,1); Label.TextXAlignment = Enum.TextXAlignment.Left; Label.Font = Enum.Font.Gotham; Label.TextSize = 11
+    local Bar = Instance.new("Frame", SFrame); Bar.Size = UDim2.new(0, 220, 0, 4); Bar.Position = UDim2.new(0.5, -110, 0.75, 0); Bar.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1); local Fill = Instance.new("Frame", Bar); Fill.Size = UDim2.new((Settings[key]-min)/(max-min), 0, 1, 0); Fill.BackgroundColor3 = Settings.MainColor
+    Bar.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then local move; move = RunService.RenderStepped:Connect(function() local relX = math.clamp((UserInputService:GetMouseLocation().X - Bar.AbsolutePosition.X) / Bar.AbsoluteSize.X, 0, 1) local val = math.floor(min + (relX * (max - min))) Settings[key] = val; Label.Text = "  "..text..": "..val; Fill.Size = UDim2.new(relX, 0, 1, 0) end) UserInputService.InputEnded:Connect(function(endInp) if endInp.UserInputType == Enum.UserInputType.MouseButton1 then move:Disconnect() end end) end end)
+end
+
+AddToggle(CombatPage, "Enable Aimbot", "Aimbot")
+AddSlider(CombatPage, "FOV Radius", 50, 600, "FOV")
+AddToggle(CombatPage, "Enable Speed Hack", "EnableSpeed")
+AddSlider(CombatPage, "Walk Speed", 16, 250, "SpeedHack")
+
+AddToggle(VisualPage, "Box ESP", "Box")
+AddToggle(VisualPage, "Health ESP", "Health")
+AddToggle(VisualPage, "Tracer ESP", "Tracers")
+AddToggle(VisualPage, "Skeleton ESP", "Skeleton")
+AddToggle(VisualPage, "Flight (Q)", "Fly")
+AddToggle(VisualPage, "NoClip (N)", "NoClip")
+
+local function ToggleMenu()
+    IsMenuOpen = not IsMenuOpen
+    if IsMenuOpen then
+        Main.Visible = true
+        TweenService:Create(Main, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 420, 0, 320), BackgroundTransparency = 0.15}):Play()
+        TweenService:Create(Glow, TweenInfo.new(0.3), {BackgroundTransparency = 0}):Play()
+    else
+        TweenService:Create(Main, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1}):Play()
+        TweenService:Create(Glow, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
+        task.delay(0.3, function() if not IsMenuOpen then Main.Visible = false end end)
+    end
+end
+
+--// CORE ENGINE
 RunService.RenderStepped:Connect(function()
-    local CurrentColor = Settings.Rainbow and Color3.fromHSV(tick() % 5 / 5, 1, 1) or Settings.MainColor
-    if Settings.Rainbow then Glow.BackgroundColor3 = CurrentColor; Title.TextColor3 = CurrentColor; FOVCircle.Color = CurrentColor end
-
-    -- Aimbot FOV
-    FOVCircle.Position = UserInputService:GetMouseLocation()
-    FOVCircle.Radius = Settings.FOV
     FOVCircle.Visible = Settings.Aimbot
+    FOVCircle.Radius = Settings.FOV
+    FOVCircle.Position = UserInputService:GetMouseLocation()
+    FOVCircle.Color = Settings.MainColor
 
-    -- Fly Logic
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
-        local root = char.HumanoidRootPart
-        local hum = char.Humanoid
-        if Settings.Fly then
-            hum.PlatformStand = true
-            local dir = Vector3.new(0,0,0)
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + Camera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - Camera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - Camera.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + Camera.CFrame.RightVector end
-            root.Velocity = dir * Settings.FlySpeed
+        if Settings.EnableSpeed then
+            char.Humanoid.WalkSpeed = Settings.SpeedHack
         else
-            if hum.PlatformStand then hum.PlatformStand = false end
+            char.Humanoid.WalkSpeed = 16
+        end
+
+        if Settings.NoClip then for _, v in pairs(char:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end end
+        if Settings.Fly then
+            local m = Vector3.new(0,0,0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then m = m + Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then m = m - Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then m = m - Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then m = m + Camera.CFrame.RightVector end
+            char.HumanoidRootPart.Velocity = m * Settings.FlySpeed; char.Humanoid.PlatformStand = true
+        else if char:FindFirstChild("Humanoid") then char.Humanoid.PlatformStand = false end end
+    end
+
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            CreateESP(p); local d = ESPData[p]; local c = p.Character
+            if c and c:FindFirstChild("HumanoidRootPart") and c:FindFirstChild("Head") and c:FindFirstChild("Humanoid") and c.Humanoid.Health > 0 then
+                local rootPos, vis = Camera:WorldToViewportPoint(c.HumanoidRootPart.Position)
+                if vis then
+                    local size = 3000 / rootPos.Z; local color = Settings.MainColor
+                    d.Box.Visible = Settings.Box; d.Box.Size = Vector2.new(size, size * 1.5); d.Box.Position = Vector2.new(rootPos.X - size/2, rootPos.Y - (size*1.5)/2); d.Box.Color = color
+                    d.Health.Visible = Settings.Health; d.Health.Text = math.floor(c.Humanoid.Health).." HP"; d.Health.Position = Vector2.new(rootPos.X, rootPos.Y + (size*0.75)+5); d.Health.Color = color
+                    d.Tracer.Visible = Settings.Tracers; d.Tracer.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y); d.Tracer.To = Vector2.new(rootPos.X, rootPos.Y); d.Tracer.Color = color
+                    
+                    if Settings.Skeleton then
+                        local head = Camera:WorldToViewportPoint(c.Head.Position)
+                        local torso = Camera:WorldToViewportPoint(c.HumanoidRootPart.Position)
+                        local lArm = c:FindFirstChild("LeftUpperArm") or c:FindFirstChild("Left Arm")
+                        local rArm = c:FindFirstChild("RightUpperArm") or c:FindFirstChild("Right Arm")
+                        local lLeg = c:FindFirstChild("LeftUpperLeg") or c:FindFirstChild("Left Leg")
+                        local rLeg = c:FindFirstChild("RightUpperLeg") or c:FindFirstChild("Right Leg")
+                        d.Skeleton.Spine.Visible = true; d.Skeleton.Spine.From = Vector2.new(head.X, head.Y); d.Skeleton.Spine.To = Vector2.new(torso.X, torso.Y); d.Skeleton.Spine.Color = color
+                        if lArm then local p = Camera:WorldToViewportPoint(lArm.Position); d.Skeleton.LeftArm.Visible = true; d.Skeleton.LeftArm.From = Vector2.new(torso.X, torso.Y); d.Skeleton.LeftArm.To = Vector2.new(p.X, p.Y); d.Skeleton.LeftArm.Color = color else d.Skeleton.LeftArm.Visible = false end
+                        if rArm then local p = Camera:WorldToViewportPoint(rArm.Position); d.Skeleton.RightArm.Visible = true; d.Skeleton.RightArm.From = Vector2.new(torso.X, torso.Y); d.Skeleton.RightArm.To = Vector2.new(p.X, p.Y); d.Skeleton.RightArm.Color = color else d.Skeleton.RightArm.Visible = false end
+                        if lLeg then local p = Camera:WorldToViewportPoint(lLeg.Position); d.Skeleton.LeftLeg.Visible = true; d.Skeleton.LeftLeg.From = Vector2.new(torso.X, torso.Y); d.Skeleton.LeftLeg.To = Vector2.new(p.X, p.Y); d.Skeleton.LeftLeg.Color = color else d.Skeleton.LeftLeg.Visible = false end
+                        if rLeg then local p = Camera:WorldToViewportPoint(rLeg.Position); d.Skeleton.RightLeg.Visible = true; d.Skeleton.RightLeg.From = Vector2.new(torso.X, torso.Y); d.Skeleton.RightLeg.To = Vector2.new(p.X, p.Y); d.Skeleton.RightLeg.Color = color else d.Skeleton.RightLeg.Visible = false end
+                    else for _, l in pairs(d.Skeleton) do l.Visible = false end end
+                else d.Box.Visible = false; d.Health.Visible = false; d.Tracer.Visible = false; for _, l in pairs(d.Skeleton) do l.Visible = false end end
+            else d.Box.Visible = false; d.Health.Visible = false; d.Tracer.Visible = false; for _, l in pairs(d.Skeleton) do l.Visible = false end end
         end
     end
 
-    -- ESP Rendering
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if not ESPData[p] then CreateESP(p) end
-            local d = ESPData[p]
-            local c = p.Character
-            if c and c:FindFirstChild("HumanoidRootPart") and c:FindFirstChild("Humanoid") and c.Humanoid.Health > 0 then
-                local rPos, vis = Camera:WorldToViewportPoint(c.HumanoidRootPart.Position)
-                local size = 3000 / rPos.Z
-
-                d.Box.Visible = Settings.Box and vis
-                if d.Box.Visible then
-                    d.Box.Size = Vector2.new(size, size * 1.5)
-                    d.Box.Position = Vector2.new(rPos.X - size/2, rPos.Y - (size * 1.5)/2)
-                    d.Box.Color = CurrentColor
-                end
-
-                d.Health.Visible = Settings.Health and vis
-                if d.Health.Visible then
-                    d.Health.Text = math.floor(c.Humanoid.Health) .. " HP"
-                    d.Health.Position = Vector2.new(rPos.X, rPos.Y + (size * 0.75) + 5)
-                    d.Health.Color = Color3.fromHSV(c.Humanoid.Health/300, 1, 1)
-                end
-            else
-                for _, v in pairs(d) do v.Visible = false end
+    if Settings.Aimbot and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local target, dist = nil, Settings.FOV
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") and p.Character.Humanoid.Health > 0 then
+                local pos, vis = Camera:WorldToViewportPoint(p.Character.Head.Position)
+                local mDist = (Vector2.new(pos.X, pos.Y) - UserInputService:GetMouseLocation()).Magnitude
+                if vis and mDist < dist then target = p.Character.Head; dist = mDist end
             end
         end
+        if target then Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position) end
     end
 end)
 
---// INPUT HANDLING
 UserInputService.InputBegan:Connect(function(i, g)
-    if g then return end
-    if i.KeyCode == Enum.KeyCode.RightShift then Main.Visible = not Main.Visible
-    elseif i.KeyCode == Enum.KeyCode.Q then 
-        Settings.Fly = not Settings.Fly 
-        if UIObjects["Fly"] then UIObjects["Fly"](Settings.Fly) end
+    if not g then
+        if i.KeyCode == Enum.KeyCode.RightShift then ToggleMenu()
+        elseif i.KeyCode == Enum.KeyCode.Q then Settings.Fly = not Settings.Fly; UpdateToggleUI("Fly")
+        elseif i.KeyCode == Enum.KeyCode.N then Settings.NoClip = not Settings.NoClip; UpdateToggleUI("NoClip") end
     end
 end)
