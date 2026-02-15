@@ -10,7 +10,7 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 --// CONFIGURATION
-local CORRECT_KEY = "0x8F2-UX99-V19.8-TX" -- Change this to your desired key
+local CORRECT_KEY = "WA-v19x8_99_QX-0012-Z" -- Change this to your desired key
 local KEY_LINK = "https://work.ink/2hgY/key"   -- Your discord or key link
 
 --// KEY SYSTEM UI
