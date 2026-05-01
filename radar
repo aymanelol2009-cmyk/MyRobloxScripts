@@ -1,0 +1,177 @@
+-- Project Delta: Tactical-Vision (V47 - Flexible ADAR & Arsenal Fix)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local lastScanTime = 0
+local scanDelay = 0.5 
+local lastTargetName = ""
+
+-- == CATEGORY LISTS ==
+local GUN_LIST = {
+    -- ADAR Fix: Included multiple variations to ensure it turns RED
+    "ADAR", "ADAR15", "ADAR 15", "ADAR 2-15", 
+    "M4", "M4A1", "AS Val", "ASVal", "Saiga 12", "FAL", "FN-FAL", "SA-58", "Mosin", 
+    "RPG-7", "MOD-98", "R700", "IZh-81", "IZh-12", "PKM", "SVD", 
+    "AKMN", "SKS", "AKM Improvised", "MP5SD", "PPSH-41",
+    "TOZ-106", "MK23", "MP443", "Yarygin", "MOD-0", "vz. 61", "Golden (KGB)", "Makarov", "TT-33"
+}
+
+local MED_LIST = {"AA-2", "Survival", "Med Bag", "IFAK", "AI-2", "AI-4", "Wound Dressing", "Bandage", "Rags", "Serum-X"}
+
+local FOOD_DRINK = {
+    "Max Energy", "Poku's Chocolate", "Benny's Beans", "Condensed Milk", 
+    "PEIPSI", "Bloxy Cola", "Frog Soda", "Kev Cola", "Immunster"
+}
+
+local ATTACHMENT_LIST = {
+    "Oil Can Suppressor", "Oil Suppressor", "PBS-1 Rifle Suppressor", "SOCOM556-RC2", "KAC Pistol Suppressor",
+    "Scope6x", "OKP-7", "T1 Micro", "Holographic Sight", "ACOG 4x", "Sniper Scope", "PN6K-5", "PSO-1", "Pu 3.5x", "LPVO", "Rifle Scope", "Reap-IR 35",
+    "Laser Pointer", "Laser", "Firefly", "ATPIAL", "AN/PEQ-15", "AKM Muzzle Brake"
+}
+
+local MAG_LIST = {"9x18", "9x19", "7.62x39", "5.56x45", "7.62x54R", "7.62x25", ".338LM", ".45 AP", "12ga", "Magazine", "Drum"}
+local HEAVY_ARMOR = {"Altyn", "Maska", "HSPV", "Juggernaut", "Improved Outer Tactical", "Crown", "TOR-S", "Fast MT"}
+local STD_ARMOR = {"6B47", "RATNIK", "6B45", "JPC", "6B23", "Kora Kulon", "Uno Vest", "Concealed Vest", "6B27", "SSH-68"}
+local UTILITY = {"Night Vision", "NVG", "Quad", "Gas Mask", "Head Mount"}
+local STORAGE = {"Backpack", "Lynx", "Wasteland", "Tortilla", "Attak-5", "Gorka", "Camo Shirt", "Camo Pants"}
+
+local FORCE_BLOCK = {"flash hider", "handle", "stock", "front", "barrel", "receiver", "sight", "mount"}
+
+-- == GUI SETUP ==
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Delta_V47_Final"
+ScreenGui.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 300, 0, 520) 
+MainFrame.Position = UDim2.new(0.8, 0, 0.15, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+MainFrame.BorderSizePixel = 2; MainFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+MainFrame.Active, MainFrame.Draggable = true, true
+MainFrame.Parent = ScreenGui
+
+local Legend = Instance.new("TextLabel")
+Legend.Size = UDim2.new(0, 150, 0, 160); Legend.Position = UDim2.new(-0.52, 0, 0, 0)
+Legend.BackgroundColor3 = Color3.fromRGB(0, 0, 0); Legend.BorderSizePixel = 2
+Legend.TextColor3 = Color3.fromRGB(255, 255, 255); Legend.Font = Enum.Font.RobotoMono
+Legend.TextSize = 12; Legend.RichText = true; Legend.BorderColor3 = Color3.fromRGB(255, 255, 255)
+Legend.Text = [[ <font color='#FF4444'>RED: Gun</font>
+ <font color='#A020F0'>PURP: Heavy</font>
+ <font color='#00FFFF'>CYAN: Armor</font>
+ <font color='#FFA500'>ORNG: Util</font>
+ <font color='#44FF44'>GREN: Meds</font>
+ <font color='#1E90FF'>BLUE: Food</font>
+ <font color='#FFFF44'>YELW: Attch</font>
+ <font color='#FFB6C1'>PINK: Mags</font>
+ <font color='#C0C0C0'>GRAY: Bag</font>]]
+Legend.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -10, 0, 30); Title.Position = UDim2.new(0, 10, 0, 5)
+Title.TextColor3 = Color3.fromRGB(255, 255, 255); Title.Font = Enum.Font.RobotoMono; Title.TextSize = 16
+Title.BackgroundTransparency = 1; Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Text = "TARGET: NONE"; Title.Parent = MainFrame
+
+local EquippedLabel = Instance.new("TextLabel")
+EquippedLabel.Size = UDim2.new(1, -10, 0, 20); EquippedLabel.Position = UDim2.new(0, 10, 0, 35)
+EquippedLabel.BackgroundTransparency = 1; EquippedLabel.TextXAlignment = Enum.TextXAlignment.Left
+EquippedLabel.RichText = true; EquippedLabel.Font = Enum.Font.RobotoMono; EquippedLabel.TextSize = 15
+EquippedLabel.Text = "HOLDING: ---"; EquippedLabel.Parent = MainFrame
+
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Size = UDim2.new(1, -10, 1, -70); ScrollFrame.Position = UDim2.new(0, 5, 0, 65)
+ScrollFrame.BackgroundTransparency = 1; ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ScrollFrame.ScrollBarThickness = 3; ScrollFrame.Parent = MainFrame
+
+local ListLabel = Instance.new("TextLabel")
+ListLabel.Size = UDim2.new(1, -10, 0, 0); ListLabel.AutomaticSize = Enum.AutomaticSize.Y
+ListLabel.BackgroundTransparency = 1; ListLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+ListLabel.TextSize = 14; ListLabel.Font = Enum.Font.RobotoMono; ListLabel.TextXAlignment = Enum.TextXAlignment.Left
+ListLabel.TextYAlignment = Enum.TextYAlignment.Top; ListLabel.RichText = true; ListLabel.Parent = ScrollFrame
+
+-- == SCAN ENGINE ==
+local function Scan(plr)
+    local items = {}; local seen = {}; local isHolding = false
+
+    if plr.Character then
+        for _, obj in pairs(plr.Character:GetChildren()) do
+            if not obj:IsA("BasePart") and not obj:IsA("Humanoid") then
+                for _, gun in pairs(GUN_LIST) do 
+                    if obj.Name:lower():gsub("%s+", ""):find(gun:lower():gsub("%s+", "")) then 
+                        isHolding = true; break 
+                    end 
+                end
+            end
+        end
+    end
+    EquippedLabel.Text = isHolding and "HOLDING: <font color='#00FF00'>YES</font>" or "HOLDING: <font color='#FF0000'>NO</font>"
+
+    local function grab(val)
+        local name = tostring(val)
+        if not name or seen[name] or #name < 2 then return end
+        local low = name:lower():gsub("%s+", "") -- Remove spaces for matching
+        for _, b in pairs(FORCE_BLOCK) do if low:find(b:lower()) then return end end
+        seen[name] = true
+        
+        local function check(list) 
+            for _, x in pairs(list) do 
+                if low:find(x:lower():gsub("%s+", "")) then return true end 
+            end 
+            return false 
+        end
+
+        if check(GUN_LIST) then table.insert(items, '<font color="#FF4444">> '..name..'</font>')
+        elseif check(HEAVY_ARMOR) then table.insert(items, '<font color="#A020F0">[!] '..name..'</font>')
+        elseif check(STD_ARMOR) then table.insert(items, '<font color="#00FFFF"># '..name..'</font>')
+        elseif check(UTILITY) then table.insert(items, '<font color="#FFA500">* '..name..'</font>')
+        elseif check(FOOD_DRINK) then table.insert(items, '<font color="#1E90FF">~ '..name..'</font>')
+        elseif check(MED_LIST) then table.insert(items, '<font color="#44FF44">+ '..name..'</font>')
+        elseif check(MAG_LIST) then table.insert(items, '<font color="#FFB6C1">| '..name..'</font>')
+        elseif check(ATTACHMENT_LIST) then table.insert(items, '<font color="#FFFF44">/ '..name..'</font>')
+        elseif check(STORAGE) then table.insert(items, '<font color="#C0C0C0">• '..name..'</font>')
+        else table.insert(items, '<font color="#666666">? '..name..'</font>') end
+    end
+
+    for _, v in pairs(plr.Backpack:GetChildren()) do grab(v.Name) end
+    for _, root in pairs(ReplicatedStorage:GetChildren()) do
+        local pData = root:FindFirstChild(plr.Name) or root:FindFirstChild(tostring(plr.UserId))
+        if pData then
+            for _, obj in pairs(pData:GetDescendants()) do
+                if obj:IsA("ValueBase") then grab(obj.Value) elseif obj:IsA("Tool") then grab(obj.Name) end
+            end
+        end
+    end
+    return #items > 0 and table.concat(items, "\n") or "EMPTY"
+end
+
+-- == MAIN LOOP ==
+RunService.RenderStepped:Connect(function()
+    local bestPlr, shortestDist = nil, 250
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local pos, onScreen = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
+            if onScreen then
+                local screenDist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                if screenDist < shortestDist then shortestDist = screenDist; bestPlr = p end
+            end
+        end
+    end
+
+    if bestPlr then
+        Title.Text = "TARGET: " .. bestPlr.Name:upper()
+        if bestPlr.Name ~= lastTargetName or (tick() - lastScanTime > scanDelay) then
+            ListLabel.Text = Scan(bestPlr); lastScanTime = tick(); lastTargetName = bestPlr.Name
+        end
+    else
+        lastTargetName = ""; Title.Text = "TARGET: NONE"; EquippedLabel.Text = "HOLDING: ---"
+        ListLabel.Text = "Tactical Overlay V47 - Scanning..."
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(io, gpe)
+    if not gpe and io.KeyCode == Enum.KeyCode.RightControl then MainFrame.Visible = not MainFrame.Visible end
+end)
